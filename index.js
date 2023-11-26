@@ -1,44 +1,60 @@
 import http from "node:http";
 import fs, {access, constants, writeFile} from "node:fs/promises";
+import { sendData, sendError } from "./modules/send.js";
+import { checkFile } from "./modules/checkFile.js";
+import { handleComediansRequest } from "./modules/handleComediansRequest.js";
+import { handleAddClient } from "./modules/handleAddClient.js";
+import { handleClientsRequest } from "./modules/handleClientsRequest.js";
+import { handleUpdateClient } from "./modules/handleUpdateClient.js";
+
+const COMEDIANS = './comedians.json';
+export const CLIENTS = './client.json';
+
+const startServer = async () => {
+    if (!(await checkFile(COMEDIANS))){
+        return;
+    }
     
-try {
-    await access('comedians.json', constants.R_OK | constants.W_OK);
-    await access('client.json', constants.R_OK | constants.W_OK);
+    await checkFile(CLIENTS, true);
     
+    const comediansData = await fs.readFile(COMEDIANS, 'utf-8');
+                    
+    const comedians = JSON.parse(comediansData);
+
     http
     .createServer(async (req, res) => {
-    if(req.method === "GET" && req.url === "/comedians") {
-            try {
-                const data = await fs.readFile('comedians.json', 'utf-8')
-                res.writeHead(200, {
-                    "Content-Type": "text/json; charset=utf-8",
-                    "access-control-allow-origin": "*",
-                })
-                res.end(data);    
-            } catch (error) {
-                res.writeHead(200, {
-                    "Content-Type": "text/pain; charset=utf-8"})
-                res.end(`Ошибка сервера:${error}`)  
+        try {
+            res.setHeader("Access-Control-Allow-Origin", "*");
+            
+            const segments = req.url.split("/").filter(Boolean);
+        
+            if(req.method === "GET" && segments[0] === "comedians") {
+                handleComediansRequest(req, res, comedians, segments);
+                return;                
             }
             
-        } else {
-            res.writeHead(404);
-            res.end("Not Found");
-        }
+            if(req.method === "POST" && segments[0] === "clients") {
+                handleAddClient(req, res);
+                return;
+            }
+            if(req.method === "GET" && segments[0] === "clients" && segments.length === 2) {
+                const ticketNumber = segments[1]
+                handleClientsRequest(req, res, ticketNumber);
+                return;
+            }
+            if(req.method === "PATCH" && segments[0] === "clients" && segments.length === 2) {
+                handleUpdateClient(req, res, segments);
+                return;
+            }
+            sendError(res, 404, "Not Found")
         
-    })
-    .listen(8080)
-    
-    console.log("Сервер запущен по адресу: http://localhost:8080");
-} catch (error) {
-    const controller = new AbortController();
-    const { signal } = controller;
-    const data = new Uint8Array(Buffer.from([]));
-    const promise = writeFile('client.json', data, { signal });
+        } catch (error) {
+            sendError(res, 500, `Ошибка сервера:${error}`)
+        }
+})
+        .listen(8080) 
 
-    // Abort the request before the promise settles.
-    controller.abort();
-
-    await promise;
-    console.log(`Server error: ${error}`);
+        console.log("Сервер запущен по адресу: http://localhost:8080");    
 }
+
+startServer();
